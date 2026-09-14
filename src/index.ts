@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./canonical.js";
 export * from "./validator.js";
+export * from "./semantic-validator.js";
 export * from "./completeness.js";
 export * from "./materialize.js";
 export * from "./conformance.js";
