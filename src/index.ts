@@ -8,5 +8,6 @@ export * from "./conformance.js";
 export * from "./interview.js";
 export * from "./migrate.js";
 export * from "./custom-requirements.js";
+export * from "./markdown.js";
 export * from "./allasdsl/parser.js";
 export * from "./adapters/index.js";
