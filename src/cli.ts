@@ -7,11 +7,11 @@ import { parseAllasDSL, toCanonicalReferences } from "./allasdsl/parser.js";
 import { canonicalizeIR } from "./canonical.js";
 import { evaluateCompleteness } from "./completeness.js";
 import { inferCustomRequirements } from "./custom-requirements.js";
+import { fromMarkdownSpec } from "./markdown.js";
 import { validateSemanticIR } from "./semantic-validator.js";
 import {
   fromChatInterview,
   fromJson,
-  fromMarkdown,
   fromOpenSpec,
   fromSpecKit,
   fromYaml,
@@ -42,7 +42,7 @@ function parseInput(path: string, format?: string): AllasCodeIR {
     case "allasdsl": return parseAllasDSL(source, path);
     case "json": return fromJson(source, path);
     case "yaml": return fromYaml(source, path);
-    case "markdown": return fromMarkdown(source, path);
+    case "markdown": return fromMarkdownSpec(source, path);
     case "custom": return inferCustomRequirements(source, { sourceRef: path });
     case "spec-kit": return fromSpecKit(extname(path) === ".json" ? JSON.parse(source) : parseYaml(source), path);
     case "openspec": return fromOpenSpec(extname(path) === ".json" ? JSON.parse(source) : parseYaml(source), path);
