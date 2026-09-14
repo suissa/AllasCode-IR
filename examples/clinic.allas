@@ -1,0 +1,48 @@
+system ClinicScheduling
+problem = "Patients need to reserve an available appointment without double booking."
+context = "A clinic offers services through multiple professionals."
+objective = "A valid reservation produces exactly one scheduled appointment."
+
+entity Patient
+  property id: uuid required
+  property name: string required
+end
+
+entity Professional
+  property id: uuid required
+  property name: string required
+end
+
+entity Appointment
+  property id: uuid required
+  property startsAt: datetime required
+  property status: AppointmentStatus required
+  relation patient -> Patient one
+  relation professional -> Professional one
+  invariant NoDoubleBooking = "A professional cannot have overlapping confirmed appointments"
+end
+
+behavior ReserveSlot for Appointment
+  given "the requested slot is available"
+  when "the scheduling intent is accepted"
+  then "exactly one Appointment becomes scheduled"
+  must_not "two confirmed appointments overlap for the same professional"
+end
+
+flow ScheduleAppointment
+  step "validate patient"
+  step "validate professional"
+  step "check availability" invokes ReserveSlot
+  step "reserve slot" invokes ReserveSlot
+  step "emit scheduled event"
+end
+
+intent ScheduleAppointment
+  uses Patient, Professional, Appointment
+  behavior ReserveSlot
+  flow ScheduleAppointment
+  expects "one valid Appointment is scheduled"
+end
+
+constraint SchedulingLatency = "p99 completion time must remain within the declared operational envelope"
+policy SchedulingAuthorization = "only authorized actors may request scheduling"
