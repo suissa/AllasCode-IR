@@ -1,4 +1,4 @@
-import { canonicalLabel, nodeBase, semanticId } from "../canonical.js";
+import { nodeBase, semanticId } from "../canonical.js";
 import {
   emptyIR,
   type AllasCodeIR,
@@ -23,6 +23,7 @@ function provenance(line: number, sourceRef?: string): Provenance {
   return { sourceKind: "allasdsl", sourceRef, locator: `line:${line}`, confidence: 1 };
 }
 
+type RuleKind = "invariant" | "constraint" | "policy";
 type Block =
   | { type: "entity"; node: Entity }
   | { type: "intent"; node: Intent }
@@ -30,13 +31,19 @@ type Block =
   | { type: "flow"; node: Flow }
   | null;
 
+function appendRule(ir: AllasCodeIR, kind: RuleKind, node: RuleNode): void {
+  if (kind === "invariant") ir.invariants.push(node);
+  else if (kind === "constraint") ir.constraints.push(node);
+  else ir.policies.push(node);
+}
+
 export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
   const lines = source.split(/\r?\n/);
   let systemName = "UnnamedSystem";
   let ir = emptyIR(systemName);
   let block: Block = null;
 
-  const pushRule = (kind: "invariant" | "constraint" | "policy", raw: string, lineNo: number) => {
+  const pushRule = (kind: RuleKind, raw: string, lineNo: number) => {
     const match = raw.match(/^(\S+)(?:\s+for\s+(\S+))?\s*=\s*(.+)$/);
     if (!match) {
       ir.diagnostics.push({ severity: "error", code: "ALLASDSL_RULE_SYNTAX", message: `Invalid ${kind} declaration`, path: `line:${lineNo}` });
@@ -44,15 +51,15 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
     }
     const [, name, scope, expressionRaw] = match;
     const base = nodeBase(systemName, kind, name, provenance(lineNo, sourceRef));
-    const node: RuleNode = { ...base, scope, expression: unquote(expressionRaw) };
-    ir[`${kind}s` as "invariants" | "constraints" | "policies"].push(node);
+    appendRule(ir, kind, { ...base, scope, expression: unquote(expressionRaw) });
   };
 
   const closeBlock = () => {
     if (!block) return;
     if (block.type === "entity") ir.entities.push(block.node);
-    if (block.type === "intent") ir.intents.push(block.node);
-    if (block.type === "behavior") {
+    else if (block.type === "intent") ir.intents.push(block.node);
+    else if (block.type === "flow") ir.flows.push(block.node);
+    else if (block.type === "behavior") {
       ir.behaviors.push(block.node);
       const base = nodeBase(systemName, "test", `${block.node.name}.behavior`, block.node.provenance[0]);
       const test: TestContract = {
@@ -66,7 +73,6 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
       };
       ir.tests.push(test);
     }
-    if (block.type === "flow") ir.flows.push(block.node);
     block = null;
   };
 
@@ -75,7 +81,7 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
     const raw = lines[index].trim();
     if (!raw || raw.startsWith("#") || raw.startsWith("//")) continue;
 
-    if (raw === "end") {
+    if (raw.toLowerCase() === "end") {
       closeBlock();
       continue;
     }
@@ -84,7 +90,7 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
     if (system) {
       closeBlock();
       systemName = unquote(system[1]);
-      ir = { ...ir, system: { ...ir.system, name: systemName } };
+      ir.system.name = systemName;
       continue;
     }
 
@@ -129,7 +135,7 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
 
     const topRule = raw.match(/^(invariant|constraint|policy)\s+(.+)$/i);
     if (topRule && !block) {
-      pushRule(topRule[1].toLowerCase() as "invariant" | "constraint" | "policy", topRule[2], lineNo);
+      pushRule(topRule[1].toLowerCase() as RuleKind, topRule[2], lineNo);
       continue;
     }
 
@@ -144,32 +150,45 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
         block.node.relations.push({ name: relation[1], target: relation[2], cardinality: relation[3] as Entity["relations"][number]["cardinality"] });
         continue;
       }
-      const nestedRule = raw.match(/^(invariant|constraint|policy)\s+(.+)$/i);
+      const nestedRule = raw.match(/^(invariant|constraint|policy)\s+(\S+)\s*=\s*(.+)$/i);
       if (nestedRule) {
-        pushRule(nestedRule[1].toLowerCase() as "invariant" | "constraint" | "policy", `${nestedRule[2].replace(/\s*=\s*/, ` for ${block.node.name} = `)}`, lineNo);
+        pushRule(nestedRule[1].toLowerCase() as RuleKind, `${nestedRule[2]} for ${block.node.name} = ${nestedRule[3]}`, lineNo);
         continue;
       }
     }
 
     if (block?.type === "intent") {
       const uses = raw.match(/^uses\s+(.+)$/i);
-      if (uses) { block.node.entities.push(...uses[1].split(",").map((x) => x.trim()).filter(Boolean)); continue; }
+      if (uses) {
+        block.node.entities.push(...uses[1].split(",").map((x) => x.trim()).filter(Boolean));
+        continue;
+      }
       const usesBehavior = raw.match(/^behavior\s+(.+)$/i);
-      if (usesBehavior) { block.node.behaviors.push(...usesBehavior[1].split(",").map((x) => x.trim()).filter(Boolean)); continue; }
+      if (usesBehavior) {
+        block.node.behaviors.push(...usesBehavior[1].split(",").map((x) => x.trim()).filter(Boolean));
+        continue;
+      }
       const usesFlow = raw.match(/^flow\s+(\S+)$/i);
-      if (usesFlow) { block.node.flow = usesFlow[1]; continue; }
+      if (usesFlow) {
+        block.node.flow = usesFlow[1];
+        continue;
+      }
       const expects = raw.match(/^expects\s+(.+)$/i);
-      if (expects) { block.node.expectedResult = unquote(expects[1]); continue; }
+      if (expects) {
+        block.node.expectedResult = unquote(expects[1]);
+        continue;
+      }
     }
 
     if (block?.type === "behavior") {
       const clause = raw.match(/^(given|when|then|must_not)\s+(.+)$/i);
       if (clause) {
         const value = unquote(clause[2]);
-        if (clause[1].toLowerCase() === "given") block.node.given.push(value);
-        if (clause[1].toLowerCase() === "when") block.node.when.push(value);
-        if (clause[1].toLowerCase() === "then") block.node.then.push(value);
-        if (clause[1].toLowerCase() === "must_not") block.node.mustNot.push(value);
+        const key = clause[1].toLowerCase();
+        if (key === "given") block.node.given.push(value);
+        else if (key === "when") block.node.when.push(value);
+        else if (key === "then") block.node.then.push(value);
+        else block.node.mustNot.push(value);
         continue;
       }
     }
@@ -178,7 +197,11 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
       const step = raw.match(/^step\s+(.+?)(?:\s+invokes\s+(\S+))?$/i);
       if (step) {
         const description = unquote(step[1]);
-        block.node.steps.push({ id: semanticId("flow-step", `${block.node.canonicalLabel}:${block.node.steps.length + 1}:${description}`), description, invokes: step[2] });
+        block.node.steps.push({
+          id: semanticId("flow-step", `${block.node.canonicalLabel}:${block.node.steps.length + 1}:${description}`),
+          description,
+          invokes: step[2],
+        });
         continue;
       }
     }
