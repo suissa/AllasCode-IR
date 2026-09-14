@@ -6,9 +6,10 @@ import { stringify as toYaml, parse as parseYaml } from "yaml";
 import { parseAllasDSL, toCanonicalReferences } from "./allasdsl/parser.js";
 import { canonicalizeIR } from "./canonical.js";
 import { evaluateCompleteness } from "./completeness.js";
+import { inferCustomRequirements } from "./custom-requirements.js";
+import { validateSemanticIR } from "./semantic-validator.js";
 import {
   fromChatInterview,
-  fromCustomRequirements,
   fromJson,
   fromMarkdown,
   fromOpenSpec,
@@ -42,12 +43,16 @@ function parseInput(path: string, format?: string): AllasCodeIR {
     case "json": return fromJson(source, path);
     case "yaml": return fromYaml(source, path);
     case "markdown": return fromMarkdown(source, path);
-    case "custom": return fromCustomRequirements(source, path);
+    case "custom": return inferCustomRequirements(source, { sourceRef: path });
     case "spec-kit": return fromSpecKit(extname(path) === ".json" ? JSON.parse(source) : parseYaml(source), path);
     case "openspec": return fromOpenSpec(extname(path) === ".json" ? JSON.parse(source) : parseYaml(source), path);
     case "chat": return fromChatInterview((extname(path) === ".json" ? JSON.parse(source) : parseYaml(source)) as ChatInterviewInput, path);
     default: throw new Error(`Unsupported format: ${selected satisfies never}`);
   }
+}
+
+function canonicalInput(path: string, format?: string): AllasCodeIR {
+  return canonicalizeIR(toCanonicalReferences(parseInput(path, format)));
 }
 
 function emit(ir: AllasCodeIR, output?: string, yaml = false): void {
@@ -72,11 +77,13 @@ program
   .argument("<input>")
   .option("-f, --format <format>")
   .action((input, options) => {
-    const ir = canonicalizeIR(toCanonicalReferences(parseInput(input, options.format)));
+    const ir = canonicalInput(input, options.format);
     const schema = validateIRSchema(ir);
+    const semanticDiagnostics = validateSemanticIR(ir);
     const completeness = evaluateCompleteness(ir);
-    process.stdout.write(`${JSON.stringify({ schema, completeness, diagnostics: ir.diagnostics, unresolved: ir.unresolved }, null, 2)}\n`);
-    if (!schema.valid || ir.diagnostics.some((d) => d.severity === "error")) process.exitCode = 1;
+    const diagnostics = [...ir.diagnostics, ...semanticDiagnostics];
+    process.stdout.write(`${JSON.stringify({ schema, completeness, diagnostics, unresolved: ir.unresolved }, null, 2)}\n`);
+    if (!schema.valid || diagnostics.some((diagnostic) => diagnostic.severity === "error")) process.exitCode = 1;
   });
 
 program
@@ -85,7 +92,7 @@ program
   .requiredOption("-o, --output <directory>")
   .option("-f, --format <format>")
   .action((input, options) => {
-    const ir = canonicalizeIR(toCanonicalReferences(parseInput(input, options.format)));
+    const ir = canonicalInput(input, options.format);
     const artifacts = materializeIR(ir);
     for (const artifact of artifacts) {
       const path = join(options.output, artifact.path);
@@ -100,7 +107,7 @@ program
   .argument("<input>")
   .option("-f, --format <format>")
   .action((input, options) => {
-    process.stdout.write(`${JSON.stringify(evaluateCompleteness(parseInput(input, options.format)), null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify(evaluateCompleteness(canonicalInput(input, options.format)), null, 2)}\n`);
   });
 
 await program.parseAsync();
