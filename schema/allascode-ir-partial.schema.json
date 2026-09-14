@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://allascode.org/schema/allascode-ir-partial-0.1.json",
+  "title": "AllasCode IR v0.1 Partial",
+  "description": "Structurally valid AllasCode IR that may still contain unresolved or incomplete semantics.",
+  "allOf": [
+    { "$ref": "./allascode-ir.schema.json" }
+  ]
+}
