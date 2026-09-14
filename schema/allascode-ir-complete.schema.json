@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://allascode.org/schema/allascode-ir-complete-0.1.json",
+  "title": "AllasCode IR v0.1 Complete Envelope",
+  "description": "Structural envelope for a compilation-ready IR. Semantic readiness is additionally enforced by the completeness engine.",
+  "allOf": [
+    { "$ref": "./allascode-ir.schema.json" },
+    {
+      "type": "object",
+      "properties": {
+        "system": {
+          "type": "object",
+          "required": ["name", "problem", "objective"]
+        },
+        "entities": { "type": "array", "minItems": 1 },
+        "intents": { "type": "array", "minItems": 1 },
+        "behaviors": { "type": "array", "minItems": 1 },
+        "flows": { "type": "array", "minItems": 1 },
+        "tests": { "type": "array", "minItems": 1 },
+        "unresolved": { "type": "array", "maxItems": 0 }
+      }
+    }
+  ]
+}
