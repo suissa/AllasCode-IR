@@ -5,5 +5,6 @@ export * from "./completeness.js";
 export * from "./materialize.js";
 export * from "./conformance.js";
 export * from "./interview.js";
+export * from "./migrate.js";
 export * from "./allasdsl/parser.js";
 export * from "./adapters/index.js";
