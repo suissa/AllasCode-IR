@@ -1,0 +1,26 @@
+irVersion: "0.1"
+system:
+  name: Example
+  problem: Represent one domain concept
+  objective: Produce structurally valid partial IR
+entities:
+  - id: entity_e51d75d3401855b7
+    canonicalLabel: Example.entity.Thing
+    name: Thing
+    state: confirmed
+    provenance:
+      - sourceKind: yaml
+        sourceRef: examples/minimal.ir.yaml
+        confidence: 1
+    properties: []
+    relations: []
+intents: []
+behaviors: []
+flows: []
+policies: []
+invariants: []
+constraints: []
+schemas: []
+tests: []
+unresolved: []
+diagnostics: []
