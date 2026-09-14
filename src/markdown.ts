@@ -15,14 +15,33 @@ export function fromMarkdownSpec(source: string, sourceRef?: string): AllasCodeI
   const { frontmatter, body, bodyStartLine } = splitFrontmatter(source);
   const ir = fromMarkdown(body, sourceRef, "markdown");
 
-  if (frontmatter.name) ir.system.name = String(frontmatter.name);
-  if (frontmatter.problem) ir.system.problem = String(frontmatter.problem);
-  if (frontmatter.context) ir.system.context = String(frontmatter.context);
-  if (frontmatter.objective) ir.system.objective = String(frontmatter.objective);
+  applyFrontmatter(ir, frontmatter);
+  if (!ir.system.description && body.trim()) ir.system.description = body.trim();
 
   remapLineProvenance(ir, source, sourceRef, bodyStartLine);
   addAcceptanceContracts(ir, body, sourceRef, bodyStartLine);
   return ir;
+}
+
+function applyFrontmatter(ir: AllasCodeIR, frontmatter: Frontmatter): void {
+  const apply = (key: "name" | "problem" | "context" | "objective", value: unknown) => {
+    if (value == null) return;
+    const next = String(value);
+    const previous = ir.system[key];
+    if (previous && previous !== next) {
+      ir.diagnostics.push({
+        severity: "warning",
+        code: "MARKDOWN_FRONTMATTER_CONFLICT",
+        message: `Frontmatter ${key} overrides a different body declaration`,
+        path: `frontmatter.${key}`,
+      });
+    }
+    ir.system[key] = next;
+  };
+  apply("name", frontmatter.name);
+  apply("problem", frontmatter.problem);
+  apply("context", frontmatter.context);
+  apply("objective", frontmatter.objective);
 }
 
 function splitFrontmatter(source: string): { frontmatter: Frontmatter; body: string; bodyStartLine: number } {
