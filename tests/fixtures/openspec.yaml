@@ -1,0 +1,34 @@
+name: Inventory
+problem: Track stock consistently
+objective: A valid adjustment updates stock exactly once
+domainObjects:
+  - name: Product
+    fields:
+      - name: id
+        type: uuid
+        required: true
+capabilities:
+  - name: AdjustStock
+    entity: Product
+    preconditions: [product exists]
+    trigger: [adjustment is accepted]
+    postconditions: [stock is updated]
+    forbidden: [same adjustment is applied twice]
+operations:
+  - name: AdjustStock
+    entities: [Product]
+    capabilities: [AdjustStock]
+    flow: Adjustment
+    result: stock is updated exactly once
+workflows:
+  - name: Adjustment
+    sequence: [validate product, apply adjustment, emit event]
+businessRules:
+  - name: IdempotentAdjustment
+    expression: one adjustment id is applied at most once
+restrictions:
+  - name: BoundedLatency
+    expression: completion stays inside the operational envelope
+policies:
+  - name: AuthorizedAdjustment
+    expression: caller must be authorized
