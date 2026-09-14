@@ -6,7 +6,7 @@
     "strict": true,
     "declaration": true,
     "outDir": "dist",
-    "rootDir": ".,
+    "rootDir": ".",
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "skipLibCheck": true
