@@ -8,10 +8,12 @@ import {
   type Entity,
   type Intent,
   type Provenance,
+  type RuleNode,
   type SourceKind,
 } from "../types.js";
 
 type StructuredSourceKind = Exclude<SourceKind, "allasdsl" | "chat">;
+type RuleKind = "invariant" | "constraint" | "policy";
 
 function asArray<T = unknown>(value: unknown): T[] {
   if (value == null) return [];
@@ -104,25 +106,30 @@ function parseIntent(system: string, value: unknown, sourceKind: SourceKind, sou
   };
 }
 
+function appendRule(ir: AllasCodeIR, kind: RuleKind, node: RuleNode): void {
+  if (kind === "invariant") ir.invariants.push(node);
+  else if (kind === "constraint") ir.constraints.push(node);
+  else ir.policies.push(node);
+}
+
 function addRules(
   ir: AllasCodeIR,
   system: string,
   sourceKind: SourceKind,
   sourceRef: string | undefined,
-  kind: "invariant" | "constraint" | "policy",
+  kind: RuleKind,
   values: unknown,
 ): void {
   asArray(values).forEach((value, index) => {
     const obj = record(value);
     const name = nameOf(value, `${kind}${index + 1}`);
     const base = nodeBase(system, kind, name, prov(sourceKind, sourceRef, `${kind}s[${index}]`));
-    const node = {
+    appendRule(ir, kind, {
       ...base,
       description: textOf(value),
       scope: obj.scope ? String(obj.scope) : obj.entity ? String(obj.entity) : undefined,
       expression: String(obj.expression ?? obj.rule ?? obj.value ?? textOf(value) ?? value),
-    };
-    ir[`${kind}s` as "invariants" | "constraints" | "policies"].push(node);
+    });
   });
 }
 
@@ -140,14 +147,9 @@ export function fromStructured(value: unknown, sourceKind: StructuredSourceKind,
   ir.system.context = root.context ? String(root.context) : systemObj.context ? String(systemObj.context) : undefined;
   ir.system.objective = root.objective ? String(root.objective) : root.goal ? String(root.goal) : systemObj.objective ? String(systemObj.objective) : undefined;
 
-  const entityValues = root.entities ?? root.domainObjects ?? root.models ?? [];
-  ir.entities = asArray(entityValues).map((item, index) => parseEntity(system, item, sourceKind, sourceRef, index));
-
-  const behaviorValues = root.behaviors ?? root.capabilities ?? [];
-  ir.behaviors = asArray(behaviorValues).map((item, index) => parseBehavior(system, item, sourceKind, sourceRef, index));
-
-  const intentValues = root.intents ?? root.operations ?? root.useCases ?? root.requirements ?? [];
-  ir.intents = asArray(intentValues).map((item, index) => parseIntent(system, item, sourceKind, sourceRef, index));
+  ir.entities = asArray(root.entities ?? root.domainObjects ?? root.models ?? []).map((item, index) => parseEntity(system, item, sourceKind, sourceRef, index));
+  ir.behaviors = asArray(root.behaviors ?? root.capabilities ?? []).map((item, index) => parseBehavior(system, item, sourceKind, sourceRef, index));
+  ir.intents = asArray(root.intents ?? root.operations ?? root.useCases ?? root.requirements ?? []).map((item, index) => parseIntent(system, item, sourceKind, sourceRef, index));
 
   asArray(root.flows ?? root.workflows ?? root.scenarios).forEach((value, index) => {
     const obj = record(value);
@@ -226,8 +228,12 @@ export interface ChatInterviewInput {
   transcript?: Array<{ role: "developer" | "forger"; text: string }>;
 }
 
+function remapProvenance<T extends { provenance: Provenance[] }>(nodes: T[], sourceKind: SourceKind): T[] {
+  return nodes.map((node) => ({ ...node, provenance: node.provenance.map((p) => ({ ...p, sourceKind })) }));
+}
+
 export function fromChatInterview(input: ChatInterviewInput, sourceRef?: string): AllasCodeIR {
-  const structured = {
+  const ir = fromStructured({
     name: input.system ?? "InterviewedSystem",
     problem: input.problem,
     objective: input.solution,
@@ -238,26 +244,22 @@ export function fromChatInterview(input: ChatInterviewInput, sourceRef?: string)
     constraints: input.constraints,
     policies: input.policies,
     flows: input.primaryFlow ? [{ name: "Primary", steps: input.primaryFlow.split(/\s*(?:->|→)\s*/).filter(Boolean) }] : [],
-  };
-  const ir = fromStructured(structured, "custom", sourceRef);
-  const remap = <T extends { provenance: Provenance[] }>(nodes: T[]): T[] => nodes.map((node) => ({
-    ...node,
-    provenance: node.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })),
-  }));
-  ir.entities = remap(ir.entities);
-  ir.intents = remap(ir.intents);
-  ir.behaviors = remap(ir.behaviors);
-  ir.flows = remap(ir.flows);
-  ir.invariants = remap(ir.invariants);
-  ir.constraints = remap(ir.constraints);
-  ir.policies = remap(ir.policies);
-  ir.schemas = remap(ir.schemas);
-  ir.tests = remap(ir.tests);
-  ir.unresolved = ir.unresolved.map((item) => ({ ...item, provenance: item.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })) }));
+  }, "custom", sourceRef);
+
+  ir.entities = remapProvenance(ir.entities, "chat");
+  ir.intents = remapProvenance(ir.intents, "chat");
+  ir.behaviors = remapProvenance(ir.behaviors, "chat");
+  ir.flows = remapProvenance(ir.flows, "chat");
+  ir.invariants = remapProvenance(ir.invariants, "chat");
+  ir.constraints = remapProvenance(ir.constraints, "chat");
+  ir.policies = remapProvenance(ir.policies, "chat");
+  ir.schemas = remapProvenance(ir.schemas, "chat");
+  ir.tests = remapProvenance(ir.tests, "chat");
+  ir.unresolved = ir.unresolved.map((item) => ({ ...item, provenance: item.provenance.map((p) => ({ ...p, sourceKind: "chat" })) }));
+
   if (input.transcript) {
     input.transcript.forEach((message, index) => {
-      if (message.role === "developer" && /\?$/.test(message.text.trim())) return;
-      if (message.role === "forger") return;
+      if (message.role === "forger" || /\?$/.test(message.text.trim())) return;
       if (index === 0 && !ir.system.problem) ir.system.problem = message.text;
     });
   }
@@ -268,19 +270,15 @@ export function fromMarkdown(source: string, sourceRef?: string, sourceKind: "ma
   const fenced = source.match(/```allas(?:dsl)?\s*\n([\s\S]*?)```/i);
   if (fenced) {
     const ir = parseAllasDSL(fenced[1], sourceRef);
-    const remap = <T extends { provenance: Provenance[] }>(nodes: T[]): T[] => nodes.map((node) => ({
-      ...node,
-      provenance: node.provenance.map((p) => ({ ...p, sourceKind })),
-    }));
-    ir.entities = remap(ir.entities);
-    ir.intents = remap(ir.intents);
-    ir.behaviors = remap(ir.behaviors);
-    ir.flows = remap(ir.flows);
-    ir.invariants = remap(ir.invariants);
-    ir.constraints = remap(ir.constraints);
-    ir.policies = remap(ir.policies);
-    ir.schemas = remap(ir.schemas);
-    ir.tests = remap(ir.tests);
+    ir.entities = remapProvenance(ir.entities, sourceKind);
+    ir.intents = remapProvenance(ir.intents, sourceKind);
+    ir.behaviors = remapProvenance(ir.behaviors, sourceKind);
+    ir.flows = remapProvenance(ir.flows, sourceKind);
+    ir.invariants = remapProvenance(ir.invariants, sourceKind);
+    ir.constraints = remapProvenance(ir.constraints, sourceKind);
+    ir.policies = remapProvenance(ir.policies, sourceKind);
+    ir.schemas = remapProvenance(ir.schemas, sourceKind);
+    ir.tests = remapProvenance(ir.tests, sourceKind);
     ir.unresolved = ir.unresolved.map((item) => ({ ...item, provenance: item.provenance.map((p) => ({ ...p, sourceKind })) }));
     return ir;
   }
@@ -299,37 +297,35 @@ export function fromMarkdown(source: string, sourceRef?: string, sourceKind: "ma
     }
   }
 
-  const list = (names: string[]) => {
+  const list = (names: string[]): string[] => {
     for (const [heading, body] of sections) {
       if (names.some((name) => heading.includes(name))) {
-        return body
-          .map((line) => line.match(/^\s*[-*]\s+(.+)$/)?.[1])
-          .filter((x): x is string => Boolean(x));
+        return body.map((line) => line.match(/^\s*[-*]\s+(.+)$/)?.[1]).filter((x): x is string => Boolean(x));
       }
     }
     return [];
   };
-  const text = (names: string[]) => {
-    for (const [heading, body] of sections) if (names.some((name) => heading.includes(name))) return body.join("\n").trim();
+
+  const text = (names: string[]): string | undefined => {
+    for (const [heading, body] of sections) {
+      if (names.some((name) => heading.includes(name))) return body.join("\n").trim() || undefined;
+    }
     return undefined;
   };
 
   const rootTitle = source.match(/^#\s+(.+)$/m)?.[1] ?? "MarkdownSystem";
-  return fromStructured(
-    {
-      name: rootTitle,
-      problem: text(["problem"]),
-      context: text(["context"]),
-      objective: text(["goal", "objective", "result"]),
-      entities: list(["entities", "entity"]),
-      intents: list(["intents", "intent"]),
-      behaviors: list(["behaviors", "behavior"]),
-      flows: list(["flows", "flow"]).map((flow, index) => ({ name: `Flow${index + 1}`, steps: flow.split(/\s*(?:->|→)\s*/) })),
-      invariants: list(["invariants", "invariant"]),
-      constraints: list(["constraints", "constraint", "restrictions"]),
-      policies: list(["policies", "policy"]),
-    },
-    sourceKind,
-    sourceRef,
-  );
+  return fromStructured({
+    name: rootTitle,
+    problem: text(["problem"]),
+    context: text(["context"]),
+    objective: text(["goal", "objective", "result"]),
+    entities: list(["entities", "entity"]),
+    intents: list(["intents", "intent"]),
+    behaviors: list(["behaviors", "behavior"]),
+    flows: list(["flows", "flow"]).map((flow, index) => ({ name: `Flow${index + 1}`, steps: flow.split(/\s*(?:->|→)\s*/) })),
+    invariants: list(["invariants", "invariant"]),
+    constraints: list(["constraints", "constraint", "restrictions"]),
+    policies: list(["policies", "policy"]),
+    schemas: list(["schemas", "schema"]),
+  }, sourceKind, sourceRef);
 }
