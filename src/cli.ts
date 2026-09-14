@@ -86,18 +86,21 @@ program
   .option("-f, --format <format>")
   .action((input, options) => {
     const ir = canonicalizeIR(toCanonicalReferences(parseInput(input, options.format)));
-    for (const artifact of materializeIR(ir)) {
+    const artifacts = materializeIR(ir);
+    for (const artifact of artifacts) {
       const path = join(options.output, artifact.path);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, artifact.content);
     }
-    process.stdout.write(`Materialized ${materializeIR(ir).length} artifacts into ${options.output}\n`);
+    process.stdout.write(`Materialized ${artifacts.length} artifacts into ${options.output}\n`);
   });
 
 program
   .command("completeness")
   .argument("<input>")
   .option("-f, --format <format>")
-  .action((input, options) => process.stdout.write(`${JSON.stringify(evaluateCompleteness(parseInput(input, options.format)), null, 2)}\n`));
+  .action((input, options) => {
+    process.stdout.write(`${JSON.stringify(evaluateCompleteness(parseInput(input, options.format)), null, 2)}\n`);
+  });
 
 await program.parseAsync();
