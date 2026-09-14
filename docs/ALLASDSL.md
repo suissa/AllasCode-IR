@@ -114,6 +114,44 @@ newline         = ? line break ? ;
 9. Policies define authorization/governance rules.
 10. Invalid syntax produces diagnostics; the parser never silently repairs semantics.
 
+## Invalid examples
+
+Unknown syntax is rejected rather than guessed:
+
+```allas
+system Shop
+entity Order
+  magical_database Postgres
+end
+```
+
+`magical_database` is not part of the semantic language and produces an `ALLASDSL_UNKNOWN_BLOCK_STATEMENT` diagnostic. Implementation technology must not enter the semantic contract.
+
+A missing semantic reference is preserved as unresolved knowledge:
+
+```allas
+system Shop
+entity Order
+  relation customer -> Customer one
+end
+```
+
+Because `Customer` is undeclared, the compiler retains the relation but creates an unresolved semantic question instead of inventing the missing Entity.
+
+A Behavior without an observable result is structurally parseable but semantically incomplete:
+
+```allas
+system Shop
+entity Order
+end
+behavior Checkout for Order
+  given "an order exists"
+  when "checkout starts"
+end
+```
+
+The compiler emits `BEHAVIOR_WITHOUT_OUTCOME`, and the completeness engine asks for the missing expected behavior before downstream compilation.
+
 ## Reserved words
 
 `system`, `problem`, `context`, `objective`, `entity`, `property`, `relation`, `intent`, `behavior`, `flow`, `step`, `uses`, `expects`, `given`, `when`, `then`, `must_not`, `invariant`, `constraint`, `policy`, `for`, `invokes`, `end`, `required`, `optional`.
@@ -121,3 +159,5 @@ newline         = ? line break ? ;
 ## Versioning
 
 AllasDSL syntax is versioned independently from generated implementations. v0.1 compiles to AllasCode IR `0.1`. A future syntax version must either preserve semantic equivalence or ship an explicit migration. Canonical semantic IDs must not change solely because source formatting changes.
+
+See `IR_VERSIONING.md` for the semantic identity and migration policy.
