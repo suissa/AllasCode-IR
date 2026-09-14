@@ -40,7 +40,7 @@ function appendRule(ir: AllasCodeIR, kind: RuleKind, node: RuleNode): void {
 export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
   const lines = source.split(/\r?\n/);
   let systemName = "UnnamedSystem";
-  let ir = emptyIR(systemName);
+  const ir = emptyIR(systemName);
   let block: Block = null;
 
   const pushRule = (kind: RuleKind, raw: string, lineNo: number) => {
@@ -83,59 +83,6 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
 
     if (raw.toLowerCase() === "end") {
       closeBlock();
-      continue;
-    }
-
-    const system = raw.match(/^system\s+(.+)$/i);
-    if (system) {
-      closeBlock();
-      systemName = unquote(system[1]);
-      ir.system.name = systemName;
-      continue;
-    }
-
-    const meta = raw.match(/^(problem|context|objective)\s*=\s*(.+)$/i);
-    if (meta && !block) {
-      const key = meta[1].toLowerCase() as "problem" | "context" | "objective";
-      ir.system[key] = unquote(meta[2]);
-      continue;
-    }
-
-    const entity = raw.match(/^entity\s+(\S+)$/i);
-    if (entity) {
-      closeBlock();
-      const base = nodeBase(systemName, "entity", entity[1], provenance(lineNo, sourceRef));
-      block = { type: "entity", node: { ...base, properties: [], relations: [] } };
-      continue;
-    }
-
-    const intent = raw.match(/^intent\s+(\S+)$/i);
-    if (intent) {
-      closeBlock();
-      const base = nodeBase(systemName, "intent", intent[1], provenance(lineNo, sourceRef));
-      block = { type: "intent", node: { ...base, entities: [], behaviors: [] } };
-      continue;
-    }
-
-    const behavior = raw.match(/^behavior\s+(\S+)(?:\s+for\s+(\S+))?$/i);
-    if (behavior) {
-      closeBlock();
-      const base = nodeBase(systemName, "behavior", behavior[1], provenance(lineNo, sourceRef));
-      block = { type: "behavior", node: { ...base, entity: behavior[2], given: [], when: [], then: [], mustNot: [] } };
-      continue;
-    }
-
-    const flow = raw.match(/^flow\s+(\S+)$/i);
-    if (flow) {
-      closeBlock();
-      const base = nodeBase(systemName, "flow", flow[1], provenance(lineNo, sourceRef));
-      block = { type: "flow", node: { ...base, steps: [] } };
-      continue;
-    }
-
-    const topRule = raw.match(/^(invariant|constraint|policy)\s+(.+)$/i);
-    if (topRule && !block) {
-      pushRule(topRule[1].toLowerCase() as RuleKind, topRule[2], lineNo);
       continue;
     }
 
@@ -204,6 +151,59 @@ export function parseAllasDSL(source: string, sourceRef?: string): AllasCodeIR {
         });
         continue;
       }
+    }
+
+    if (block) {
+      ir.diagnostics.push({ severity: "error", code: "ALLASDSL_UNKNOWN_BLOCK_STATEMENT", message: `Unknown ${block.type} statement: ${raw}`, path: `line:${lineNo}` });
+      continue;
+    }
+
+    const system = raw.match(/^system\s+(.+)$/i);
+    if (system) {
+      systemName = unquote(system[1]);
+      ir.system.name = systemName;
+      continue;
+    }
+
+    const meta = raw.match(/^(problem|context|objective)\s*=\s*(.+)$/i);
+    if (meta) {
+      const key = meta[1].toLowerCase() as "problem" | "context" | "objective";
+      ir.system[key] = unquote(meta[2]);
+      continue;
+    }
+
+    const entity = raw.match(/^entity\s+(\S+)$/i);
+    if (entity) {
+      const base = nodeBase(systemName, "entity", entity[1], provenance(lineNo, sourceRef));
+      block = { type: "entity", node: { ...base, properties: [], relations: [] } };
+      continue;
+    }
+
+    const intent = raw.match(/^intent\s+(\S+)$/i);
+    if (intent) {
+      const base = nodeBase(systemName, "intent", intent[1], provenance(lineNo, sourceRef));
+      block = { type: "intent", node: { ...base, entities: [], behaviors: [] } };
+      continue;
+    }
+
+    const behavior = raw.match(/^behavior\s+(\S+)(?:\s+for\s+(\S+))?$/i);
+    if (behavior) {
+      const base = nodeBase(systemName, "behavior", behavior[1], provenance(lineNo, sourceRef));
+      block = { type: "behavior", node: { ...base, entity: behavior[2], given: [], when: [], then: [], mustNot: [] } };
+      continue;
+    }
+
+    const flow = raw.match(/^flow\s+(\S+)$/i);
+    if (flow) {
+      const base = nodeBase(systemName, "flow", flow[1], provenance(lineNo, sourceRef));
+      block = { type: "flow", node: { ...base, steps: [] } };
+      continue;
+    }
+
+    const topRule = raw.match(/^(invariant|constraint|policy)\s+(.+)$/i);
+    if (topRule) {
+      pushRule(topRule[1].toLowerCase() as RuleKind, topRule[2], lineNo);
+      continue;
     }
 
     ir.diagnostics.push({ severity: "error", code: "ALLASDSL_UNKNOWN_STATEMENT", message: `Unknown statement: ${raw}`, path: `line:${lineNo}` });
