@@ -81,4 +81,18 @@ describe("cross-adapter conformance", () => {
     expect(report.results).toHaveLength(8);
     expect(report.results.every((result) => result.errorCount === 0)).toBe(true);
   });
+
+  it("keeps semantic differences visible instead of normalizing them away", () => {
+    const baseline = parseAllasDSL(allas);
+    const changed = fromSpecKit({
+      ...structured,
+      objective: "produce a different result",
+    });
+    const report = createConformanceReport([
+      { source: "baseline", ir: baseline },
+      { source: "changed", ir: changed },
+    ]);
+    expect(report.allEquivalent).toBe(false);
+    expect(report.results[1].equivalentToBaseline).toBe(false);
+  });
 });
