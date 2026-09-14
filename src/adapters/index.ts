@@ -11,6 +11,8 @@ import {
   type SourceKind,
 } from "../types.js";
 
+type StructuredSourceKind = Exclude<SourceKind, "allasdsl" | "chat">;
+
 function asArray<T = unknown>(value: unknown): T[] {
   if (value == null) return [];
   return Array.isArray(value) ? (value as T[]) : [value as T];
@@ -57,7 +59,7 @@ function parseEntity(system: string, value: unknown, sourceKind: SourceKind, sou
   const name = nameOf(value, `Entity${index + 1}`);
   const base = nodeBase(system, "entity", name, prov(sourceKind, sourceRef, `entities[${index}]`));
   const properties = asArray(obj.properties ?? obj.fields ?? obj.attributes).map(parseProperty);
-  const relations = asArray(obj.relations ?? obj.relationships).map((relation, relationIndex) => {
+  const relations: Entity["relations"] = asArray(obj.relations ?? obj.relationships).map((relation, relationIndex) => {
     if (typeof relation === "string") {
       const match = relation.match(/^(\S+)\s*->\s*(\S+)/);
       return { name: match?.[1] ?? `relation${relationIndex + 1}`, target: match?.[2] ?? relation };
@@ -124,7 +126,7 @@ function addRules(
   });
 }
 
-export function fromStructured(value: unknown, sourceKind: "json" | "yaml" | "spec-kit" | "openspec" | "custom", sourceRef?: string): AllasCodeIR {
+export function fromStructured(value: unknown, sourceKind: StructuredSourceKind, sourceRef?: string): AllasCodeIR {
   const root = record(value);
   if (root.irVersion === "0.1" && Array.isArray(root.entities) && Array.isArray(root.intents)) {
     return canonicalizeIR(value as AllasCodeIR);
@@ -238,9 +240,20 @@ export function fromChatInterview(input: ChatInterviewInput, sourceRef?: string)
     flows: input.primaryFlow ? [{ name: "Primary", steps: input.primaryFlow.split(/\s*(?:->|→)\s*/).filter(Boolean) }] : [],
   };
   const ir = fromStructured(structured, "custom", sourceRef);
-  ir.entities = ir.entities.map((node) => ({ ...node, provenance: node.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })) }));
-  ir.intents = ir.intents.map((node) => ({ ...node, provenance: node.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })) }));
-  ir.behaviors = ir.behaviors.map((node) => ({ ...node, provenance: node.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })) }));
+  const remap = <T extends { provenance: Provenance[] }>(nodes: T[]): T[] => nodes.map((node) => ({
+    ...node,
+    provenance: node.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })),
+  }));
+  ir.entities = remap(ir.entities);
+  ir.intents = remap(ir.intents);
+  ir.behaviors = remap(ir.behaviors);
+  ir.flows = remap(ir.flows);
+  ir.invariants = remap(ir.invariants);
+  ir.constraints = remap(ir.constraints);
+  ir.policies = remap(ir.policies);
+  ir.schemas = remap(ir.schemas);
+  ir.tests = remap(ir.tests);
+  ir.unresolved = ir.unresolved.map((item) => ({ ...item, provenance: item.provenance.map((p) => ({ ...p, sourceKind: "chat" as const })) }));
   if (input.transcript) {
     input.transcript.forEach((message, index) => {
       if (message.role === "developer" && /\?$/.test(message.text.trim())) return;
@@ -255,12 +268,20 @@ export function fromMarkdown(source: string, sourceRef?: string, sourceKind: "ma
   const fenced = source.match(/```allas(?:dsl)?\s*\n([\s\S]*?)```/i);
   if (fenced) {
     const ir = parseAllasDSL(fenced[1], sourceRef);
-    if (sourceKind === "custom") {
-      const remap = <T extends { provenance: Provenance[] }>(nodes: T[]) => nodes.map((node) => ({ ...node, provenance: node.provenance.map((p) => ({ ...p, sourceKind })) }));
-      ir.entities = remap(ir.entities);
-      ir.intents = remap(ir.intents);
-      ir.behaviors = remap(ir.behaviors);
-    }
+    const remap = <T extends { provenance: Provenance[] }>(nodes: T[]): T[] => nodes.map((node) => ({
+      ...node,
+      provenance: node.provenance.map((p) => ({ ...p, sourceKind })),
+    }));
+    ir.entities = remap(ir.entities);
+    ir.intents = remap(ir.intents);
+    ir.behaviors = remap(ir.behaviors);
+    ir.flows = remap(ir.flows);
+    ir.invariants = remap(ir.invariants);
+    ir.constraints = remap(ir.constraints);
+    ir.policies = remap(ir.policies);
+    ir.schemas = remap(ir.schemas);
+    ir.tests = remap(ir.tests);
+    ir.unresolved = ir.unresolved.map((item) => ({ ...item, provenance: item.provenance.map((p) => ({ ...p, sourceKind })) }));
     return ir;
   }
 
