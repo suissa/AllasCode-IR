@@ -3,5 +3,6 @@ export * from "./canonical.js";
 export * from "./validator.js";
 export * from "./completeness.js";
 export * from "./materialize.js";
+export * from "./conformance.js";
 export * from "./allasdsl/parser.js";
 export * from "./adapters/index.js";
