@@ -19,7 +19,7 @@ operations:
     entities: [Product]
     capabilities: [AdjustStock]
     flow: Adjustment
-    result: stock is updated exactly once
+    expectedResult: stock is updated exactly once
 workflows:
   - name: Adjustment
     sequence: [validate product, apply adjustment, emit event]
